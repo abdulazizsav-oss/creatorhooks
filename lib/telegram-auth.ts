@@ -37,7 +37,12 @@ export function validateTelegramInitData(initData: string, botToken: string) {
   return computedHash === hash;
 }
 
-export function assertTelegramAuth(initData: string | null) {
+export function assertTelegramAuth(
+  initData: string | null,
+  options?: {
+    allowMissing?: boolean;
+  }
+) {
   if (process.env.NODE_ENV !== "production") {
     return;
   }
@@ -48,7 +53,15 @@ export function assertTelegramAuth(initData: string | null) {
     throw new Error("TELEGRAM_BOT_TOKEN is not configured.");
   }
 
-  if (!initData || !validateTelegramInitData(initData, botToken)) {
+  if (!initData) {
+    if (options?.allowMissing) {
+      return;
+    }
+
+    throw new Error("Telegram auth validation failed.");
+  }
+
+  if (!validateTelegramInitData(initData, botToken)) {
     throw new Error("Telegram auth validation failed.");
   }
 }

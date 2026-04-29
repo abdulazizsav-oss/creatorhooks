@@ -41,8 +41,10 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [sentId, setSentId] = useState<string | null>(null);
+  const [isTelegramContext, setIsTelegramContext] = useState(false);
 
   useEffect(() => {
+    setIsTelegramContext(Boolean(window.Telegram?.WebApp?.initData));
     window.Telegram?.WebApp?.ready?.();
     window.Telegram?.WebApp?.expand?.();
   }, []);
@@ -239,6 +241,13 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
                   <PaperPlaneTilt size={18} />
                   Открыть @{botUsername.replace(/^@/, "")}
                 </button>
+              </div>
+            ) : null}
+
+            {!isTelegramContext ? (
+              <div className="rounded-[20px] border border-black/8 bg-paper/70 px-4 py-3 text-sm leading-relaxed text-black/60">
+                Генерация работает и в браузере. Чтобы отправлять варианты прямо в Telegram-бота,
+                открой приложение через кнопку в @{botUsername.replace(/^@/, "") || "боте"}.
               </div>
             ) : null}
 
@@ -500,6 +509,7 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
                           <button
                             type="button"
                             onClick={() => sendVariantToBot(copyKey, lines.join("\n"))}
+                            disabled={!isTelegramContext}
                             className="inline-flex min-h-11 items-center gap-2 rounded-[16px] border border-moss/18 bg-moss/8 px-4 py-2 text-sm font-medium text-ink transition duration-200 hover:-translate-y-[1px]"
                           >
                             <PaperPlaneTilt size={18} />

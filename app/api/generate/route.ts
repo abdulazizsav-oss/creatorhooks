@@ -23,7 +23,7 @@ const payloadSchema = z.object({
 export async function POST(request: Request) {
   try {
     const initData = request.headers.get("x-telegram-init-data");
-    assertTelegramAuth(initData);
+    assertTelegramAuth(initData, { allowMissing: true });
 
     const payload = payloadSchema.parse(await request.json());
     const result = await generateScript(payload.type, payload.data);

@@ -41,6 +41,16 @@ try {
     ]
   });
 
+  await telegram("setChatMenuButton", {
+    menu_button: {
+      type: "web_app",
+      text: "Открыть HOOK",
+      web_app: {
+        url: appUrl
+      }
+    }
+  });
+
   const result = await telegram("setWebhook", {
     url: webhookUrl,
     allowed_updates: ["message", "callback_query"]
