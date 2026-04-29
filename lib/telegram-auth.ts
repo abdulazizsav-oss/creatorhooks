@@ -1,5 +1,13 @@
 import crypto from "node:crypto";
 
+type TelegramAuthUser = {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+  language_code?: string;
+};
+
 function createSecretKey(botToken: string) {
   return crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
 }
@@ -42,5 +50,29 @@ export function assertTelegramAuth(initData: string | null) {
 
   if (!initData || !validateTelegramInitData(initData, botToken)) {
     throw new Error("Telegram auth validation failed.");
+  }
+}
+
+export function getTelegramUserFromInitData(initData: string | null): TelegramAuthUser | null {
+  if (!initData) {
+    return null;
+  }
+
+  const rawUser = new URLSearchParams(initData).get("user");
+
+  if (!rawUser) {
+    return null;
+  }
+
+  try {
+    const user = JSON.parse(rawUser) as TelegramAuthUser;
+
+    if (typeof user?.id !== "number") {
+      return null;
+    }
+
+    return user;
+  } catch {
+    return null;
   }
 }

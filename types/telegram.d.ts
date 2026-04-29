@@ -23,6 +23,8 @@ interface TelegramWebApp {
   expand?: () => void;
   ready?: () => void;
   enableClosingConfirmation?: () => void;
+  openLink?: (url: string) => void;
+  openTelegramLink?: (url: string) => void;
   HapticFeedback?: {
     impactOccurred?: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void;
     notificationOccurred?: (type: "error" | "success" | "warning") => void;

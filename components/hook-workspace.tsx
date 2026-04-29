@@ -7,6 +7,7 @@ import {
   Lightning,
   LinkBreak,
   MagicWand,
+  PaperPlaneTilt,
   Pulse,
   Sparkle
 } from "@phosphor-icons/react";
@@ -32,13 +33,14 @@ const initialForm: GenerationInput = {
   notes: ""
 };
 
-export function HookWorkspace() {
+export function HookWorkspace({ botUsername }: { botUsername: string }) {
   const [type, setType] = useState<GenerationType>("harmon");
   const [form, setForm] = useState<GenerationInput>(initialForm);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [sentId, setSentId] = useState<string | null>(null);
 
   useEffect(() => {
     window.Telegram?.WebApp?.ready?.();
@@ -97,11 +99,98 @@ export function HookWorkspace() {
     }
   }
 
+  async function copyText(text: string) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.setAttribute("readonly", "true");
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    textArea.style.pointerEvents = "none";
+    document.body.appendChild(textArea);
+    textArea.select();
+    textArea.setSelectionRange(0, textArea.value.length);
+
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textArea);
+
+    if (!copied) {
+      throw new Error("Не удалось скопировать текст.");
+    }
+  }
+
+  function openBot() {
+    if (!botUsername) {
+      return;
+    }
+
+    const url = `https://t.me/${botUsername.replace(/^@/, "")}`;
+    const webApp = window.Telegram?.WebApp;
+
+    if (webApp?.openTelegramLink) {
+      webApp.openTelegramLink(url);
+      return;
+    }
+
+    if (webApp?.openLink) {
+      webApp.openLink(url);
+      return;
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   async function copyVariant(id: string, lines: string[]) {
-    await navigator.clipboard.writeText(lines.join("\n"));
+    try {
+      await copyText(lines.join("\n"));
+    } catch (copyError) {
+      const message =
+        copyError instanceof Error ? copyError.message : "Не удалось скопировать текст.";
+      setError(message);
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("error");
+      return;
+    }
+
     setCopiedId(id);
     window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("light");
     window.setTimeout(() => setCopiedId(null), 1400);
+  }
+
+  async function sendVariantToBot(id: string, text: string) {
+    try {
+      const response = await fetch("/api/telegram/share", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-telegram-init-data": window.Telegram?.WebApp?.initData ?? ""
+        },
+        body: JSON.stringify({
+          text,
+          telegramUserId: window.Telegram?.WebApp?.initDataUnsafe?.user?.id
+        })
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Не удалось отправить вариант в бота.");
+      }
+
+      setSentId(id);
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
+      window.setTimeout(() => setSentId(null), 1800);
+    } catch (shareError) {
+      const message =
+        shareError instanceof Error
+          ? shareError.message
+          : "Не удалось отправить вариант в бота.";
+      setError(message);
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("error");
+    }
   }
 
   return (
@@ -133,6 +222,26 @@ export function HookWorkspace() {
           </div>
 
           <div className="grid gap-6 px-5 py-5 sm:px-6">
+            {botUsername ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-moss/18 bg-moss/8 px-4 py-4">
+                <div>
+                  <div className="text-sm font-medium text-ink">Бот подключен</div>
+                  <div className="mt-1 text-sm text-black/55">
+                    Запусти бота один раз, и варианты можно будет сохранять прямо в Telegram.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={openBot}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-[18px] border border-black/8 bg-white px-4 py-2 text-sm font-medium text-ink transition duration-200 hover:-translate-y-[1px]"
+                >
+                  <PaperPlaneTilt size={18} />
+                  Открыть @{botUsername.replace(/^@/, "")}
+                </button>
+              </div>
+            ) : null}
+
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
               {typeOrder.map((item) => {
                 const active = item === type;
@@ -375,15 +484,28 @@ export function HookWorkspace() {
                           </div>
                           <h3 className="mt-2 text-2xl tracking-tight text-ink">{item.hook}</h3>
                         </div>
+                      </div>
 
+                      <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           type="button"
                           onClick={() => copyVariant(copyKey, lines)}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-black/8 bg-paper text-ink transition duration-200 hover:-translate-y-[1px]"
-                          aria-label="Скопировать"
+                          className="inline-flex min-h-11 items-center gap-2 rounded-[16px] border border-black/8 bg-paper px-4 py-2 text-sm font-medium text-ink transition duration-200 hover:-translate-y-[1px]"
                         >
                           <Copy size={18} />
+                          Скопировать
                         </button>
+
+                        {botUsername ? (
+                          <button
+                            type="button"
+                            onClick={() => sendVariantToBot(copyKey, lines.join("\n"))}
+                            className="inline-flex min-h-11 items-center gap-2 rounded-[16px] border border-moss/18 bg-moss/8 px-4 py-2 text-sm font-medium text-ink transition duration-200 hover:-translate-y-[1px]"
+                          >
+                            <PaperPlaneTilt size={18} />
+                            В бот
+                          </button>
+                        ) : null}
                       </div>
 
                       <div className="mt-5 grid gap-3">
@@ -408,6 +530,10 @@ export function HookWorkspace() {
 
                       {copiedId === copyKey ? (
                         <div className="mt-3 text-sm text-moss">Скопировано.</div>
+                      ) : null}
+
+                      {sentId === copyKey ? (
+                        <div className="mt-3 text-sm text-moss">Отправлено в бота.</div>
                       ) : null}
                     </article>
                   );
