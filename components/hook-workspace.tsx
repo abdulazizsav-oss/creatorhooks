@@ -84,6 +84,7 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [voiceField, setVoiceField] = useState<"topic" | "notes" | null>(null);
   const [voiceSupported, setVoiceSupported] = useState(false);
+  const [microphoneGranted, setMicrophoneGranted] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const canGenerate = form.topic.trim().length >= 3;
 
@@ -172,7 +173,70 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
     });
   }
 
-  function startVoiceInput(field: "topic" | "notes") {
+  function normalizeVoiceErrorCode(error: string) {
+    const normalized = error.trim().toLowerCase();
+
+    switch (normalized) {
+      case "notallowederror":
+      case "permissiondeniederror":
+        return "not-allowed";
+      case "servicenotallowederror":
+        return "service-not-allowed";
+      case "audiocaptureerror":
+      case "notfounderror":
+        return "audio-capture";
+      case "networkerror":
+        return "network";
+      case "nospeecherror":
+        return "no-speech";
+      case "aborterror":
+        return "aborted";
+      default:
+        return normalized;
+    }
+  }
+
+  function getVoiceErrorMessage(error: string) {
+    switch (normalizeVoiceErrorCode(error)) {
+      case "not-allowed":
+      case "service-not-allowed":
+        return "Браузер не дал доступ к микрофону. Разреши микрофон для этой страницы и попробуй еще раз.";
+      case "audio-capture":
+        return "Микрофон не найден или недоступен для этой страницы.";
+      case "network":
+        return "Сервис распознавания речи сейчас недоступен. Попробуй еще раз через пару секунд.";
+      case "no-speech":
+        return "Не получилось распознать речь. Попробуй говорить чуть ближе к микрофону.";
+      case "aborted":
+        return "";
+      default:
+        return "Голосовой ввод сейчас не сработал. Попробуй еще раз или открой страницу в Chrome/Safari.";
+    }
+  }
+
+  async function ensureMicrophoneAccess() {
+    if (microphoneGranted) {
+      return true;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return true;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setMicrophoneGranted(true);
+      return true;
+    } catch (accessError) {
+      const errorName =
+        accessError instanceof DOMException ? accessError.name : "not-allowed";
+      setError(getVoiceErrorMessage(errorName));
+      return false;
+    }
+  }
+
+  async function startVoiceInput(field: "topic" | "notes") {
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!Recognition) {
@@ -186,6 +250,13 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
     }
 
     recognitionRef.current?.stop();
+
+    const microphoneAvailable = await ensureMicrophoneAccess();
+
+    if (!microphoneAvailable) {
+      setVoiceField(null);
+      return;
+    }
 
     const recognition = new Recognition();
     recognitionRef.current = recognition;
@@ -206,8 +277,13 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
       }
     };
 
-    recognition.onerror = () => {
-      setError("Не удалось распознать голос. Попробуй еще раз.");
+    recognition.onerror = (event) => {
+      const message = getVoiceErrorMessage(event.error);
+
+      if (message) {
+        setError(message);
+      }
+
       setVoiceField(null);
     };
 
@@ -218,7 +294,18 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
 
     setVoiceField(field);
     setError(null);
-    recognition.start();
+
+    try {
+      recognition.start();
+    } catch (startError) {
+      const message =
+        startError instanceof Error
+          ? startError.message
+          : "Не удалось запустить голосовой ввод.";
+      setError(message);
+      setVoiceField(null);
+      recognitionRef.current = null;
+    }
   }
 
   async function copyText(text: string) {
@@ -437,7 +524,7 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
                       <IconButton
                         label={voiceField === "topic" ? "Остановить запись" : "Надиктовать тему"}
                         active={voiceField === "topic"}
-                        onClick={() => startVoiceInput("topic")}
+                        onClick={() => void startVoiceInput("topic")}
                         icon={
                           <Microphone
                             size={18}
@@ -450,6 +537,11 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
                   <p className="text-sm leading-relaxed text-black/48">
                     Достаточно одной темы. Остальное можно заполнить позже или не трогать вообще.
                   </p>
+                  {voiceSupported ? (
+                    <p className="text-sm leading-relaxed text-black/42">
+                      При первом запуске браузер может попросить доступ к микрофону.
+                    </p>
+                  ) : null}
                 </div>
               </Field>
 
@@ -525,7 +617,7 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
                       <IconButton
                         label={voiceField === "notes" ? "Остановить запись" : "Надиктовать контекст"}
                         active={voiceField === "notes"}
-                        onClick={() => startVoiceInput("notes")}
+                        onClick={() => void startVoiceInput("notes")}
                         icon={
                           <Microphone
                             size={18}
