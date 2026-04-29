@@ -1,0 +1,35 @@
+{
+  "name": "hook-mini-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "bedrock:check": "node --env-file=.env.local ./scripts/test-bedrock.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.59.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1038.0",
+    "@libsql/client": "^0.15.15",
+    "@phosphor-icons/react": "^2.1.10",
+    "next": "^14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "telegraf": "^4.16.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.2"
+  }
+}
