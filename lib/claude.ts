@@ -17,6 +17,7 @@ const bedrockRegion =
   process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "eu-north-1";
 const bedrockModelId = process.env.BEDROCK_MODEL_ID;
 const bedrockMaxTokens = Number.parseInt(process.env.BEDROCK_MAX_TOKENS ?? "32000", 10);
+const bedrockBearerToken = process.env.AWS_BEARER_TOKEN_BEDROCK?.trim();
 
 let bedrockClient: BedrockRuntimeClient | null = null;
 
@@ -68,11 +69,13 @@ function extractBedrockText(
 }
 
 function buildMockItems(type: GenerationType, data: GenerationInput): GeneratedItem[] {
+  const niche = data.niche?.trim() || "вашей нише";
+  const audience = data.audience?.trim() || "вашей аудитории";
   const baseHook = {
     harmon: `Ты не обязан снимать чаще, чтобы ${data.topic.toLowerCase()} работал лучше.`,
     classic: `Вот самая простая схема, чтобы раскрыть тему "${data.topic}" без воды.`,
     hooks: `90% роликов про "${data.topic}" теряют внимание в первые 2 секунды.`,
-    ads: `Если ${data.audience.toLowerCase()} все еще откладывает ${data.topic.toLowerCase()}, причина обычно одна.`,
+    ads: `Если ${audience.toLowerCase()} все еще откладывает ${data.topic.toLowerCase()}, причина обычно одна.`,
     story: `Я понял, что делаю "${data.topic}" неправильно, только когда увидел цифры.`,
     expert: `Главная ошибка в теме "${data.topic}" не в технике, а в логике подачи.`
   }[type];
@@ -84,13 +87,22 @@ function buildMockItems(type: GenerationType, data: GenerationInput): GeneratedI
         ? baseHook
         : `${baseHook.replace(".", "")} — вариант ${index + 1}.`,
     script: [
-      `Открой ролик через контраст: чего аудитория ожидает и что происходит на самом деле в нише ${data.niche}.`,
-      `Быстро назови одну конкретную причину проблемы для аудитории "${data.audience}".`,
+      `Открой ролик через контраст: чего аудитория ожидает и что происходит на самом деле в нише ${niche}.`,
+      `Быстро назови одну конкретную причину проблемы для аудитории "${audience}".`,
       `Покажи короткий инсайт или шаг, который меняет результат по теме "${data.topic}".`,
       `Закрой ролик действием: сохранить, написать в директ или протестировать подход сегодня.`
     ],
     cta: "Сохрани и протестируй этот заход в следующем ролике."
   }));
+}
+
+function shouldUseBedrock() {
+  return Boolean(bedrockModelId && bedrockBearerToken);
+}
+
+function logProviderFallback(provider: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`${provider} generation failed, falling back.`, message);
 }
 
 async function generateWithBedrock(
@@ -160,49 +172,57 @@ export async function generateScript(
 ): Promise<GenerateResponse> {
   const id = crypto.randomUUID();
 
-  if (bedrockModelId) {
-    return generateWithBedrock(id, type, data);
+  if (shouldUseBedrock()) {
+    try {
+      return await generateWithBedrock(id, type, data);
+    } catch (error) {
+      logProviderFallback("Bedrock", error);
+    }
   }
 
-  if (!anthropicClient) {
-    const mockItems = buildMockItems(type, data);
-    return {
-      id,
-      type,
-      promptVersion: PROMPT_VERSION,
-      source: "mock",
-      items: mockItems,
-      rawText: JSON.stringify({ items: mockItems }, null, 2)
-    };
+  if (anthropicClient) {
+    try {
+      const { system, user } = buildPrompt(type, data);
+
+      const response = await anthropicClient.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1500,
+        system,
+        messages: [{ role: "user", content: user }]
+      });
+
+      const text = response.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
+
+      const parsed = extractJSON(text);
+      const items = Array.isArray(parsed.items) ? parsed.items : [];
+
+      return {
+        id,
+        type,
+        promptVersion: PROMPT_VERSION,
+        source: "anthropic",
+        items,
+        rawText: text,
+        usage: {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens
+        }
+      };
+    } catch (error) {
+      logProviderFallback("Anthropic", error);
+    }
   }
 
-  const { system, user } = buildPrompt(type, data);
-
-  const response = await anthropicClient.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 1500,
-    system,
-    messages: [{ role: "user", content: user }]
-  });
-
-  const text = response.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
-
-  const parsed = extractJSON(text);
-  const items = Array.isArray(parsed.items) ? parsed.items : [];
-
+  const mockItems = buildMockItems(type, data);
   return {
     id,
     type,
     promptVersion: PROMPT_VERSION,
-    source: "anthropic",
-    items,
-    rawText: text,
-    usage: {
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens
-    }
+    source: "mock",
+    items: mockItems,
+    rawText: JSON.stringify({ items: mockItems }, null, 2)
   };
 }

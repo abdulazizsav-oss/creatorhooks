@@ -1,5 +1,8 @@
+import crypto from "node:crypto";
+
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
 const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+const explicitSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
 
 if (!botToken) {
   console.error("Missing TELEGRAM_BOT_TOKEN in environment.");
@@ -12,6 +15,8 @@ if (!appUrl) {
 }
 
 const webhookUrl = `${appUrl.replace(/\/$/, "")}/api/telegram`;
+const webhookSecret =
+  explicitSecret || crypto.createHash("sha256").update(botToken).digest("hex").slice(0, 32);
 
 async function telegram(method, body) {
   const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
@@ -53,6 +58,7 @@ try {
 
   const result = await telegram("setWebhook", {
     url: webhookUrl,
+    secret_token: webhookSecret,
     allowed_updates: ["message", "callback_query"]
   });
 
@@ -61,6 +67,7 @@ try {
       {
         ok: true,
         webhookUrl,
+        webhookSecret,
         description: result.description
       },
       null,

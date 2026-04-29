@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getTelegramBotUrl, getTelegramBotUsername, getTelegramWebhookBot } from "@/lib/telegram-bot";
+import { getTelegramBotUrl, getTelegramBotUsername, getTelegramWebhookBot, getTelegramWebhookSecret } from "@/lib/telegram-bot";
 
 export const runtime = "nodejs";
 
@@ -14,6 +14,13 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const receivedSecret = request.headers.get("x-telegram-bot-api-secret-token");
+    const expectedSecret = getTelegramWebhookSecret();
+
+    if (!receivedSecret || receivedSecret !== expectedSecret) {
+      return NextResponse.json({ ok: false, error: "Unauthorized webhook request." }, { status: 401 });
+    }
+
     const update = await request.json();
     const bot = getTelegramWebhookBot();
 

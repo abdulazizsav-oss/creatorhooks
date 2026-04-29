@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 import { Telegraf } from "telegraf";
 
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -37,6 +39,16 @@ export function getTelegramBotUrl() {
   }
 
   return `https://t.me/${botUsername}`;
+}
+
+export function getTelegramWebhookSecret() {
+  const explicitSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+
+  if (explicitSecret) {
+    return explicitSecret;
+  }
+
+  return crypto.createHash("sha256").update(ensureBotToken()).digest("hex").slice(0, 32);
 }
 
 function buildOpenAppButton() {

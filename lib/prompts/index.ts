@@ -11,15 +11,21 @@ const responseContract = [
 ].join(" ");
 
 export function buildPrompt(type: GenerationType, data: GenerationInput) {
+  const niche = data.niche?.trim() || "не указана";
+  const audience = data.audience?.trim() || "не указана";
+  const tone = data.tone?.trim() || "Энергичный, уверенный";
+  const platform = data.platform?.trim() || "Instagram Reels / TikTok";
+  const duration = data.duration?.trim() || "30-45 секунд";
+
   const baseContext = [
     `Тип генерации: ${generationTypeConfig[type].label}.`,
     `Тема: ${data.topic}.`,
-    `Ниша: ${data.niche}.`,
-    `Аудитория: ${data.audience}.`,
-    `Тон: ${data.tone}.`,
+    `Ниша: ${niche}.`,
+    `Аудитория: ${audience}.`,
+    `Тон: ${tone}.`,
     `Язык ответа: ${data.language}.`,
-    `Платформа: ${data.platform || "Instagram Reels / TikTok"}.`,
-    `Хронометраж: ${data.duration || "30-45 секунд"}.`,
+    `Платформа: ${platform}.`,
+    `Хронометраж: ${duration}.`,
     data.offer ? `Оффер: ${data.offer}.` : null,
     data.notes ? `Доп. контекст: ${data.notes}.` : null
   ]

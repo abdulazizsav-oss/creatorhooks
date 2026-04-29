@@ -5,18 +5,30 @@ import { generateScript } from "@/lib/claude";
 import { assertTelegramAuth } from "@/lib/telegram-auth";
 import { generationTypeConfig } from "@/lib/generation-types";
 
+function optionalText(defaultValue = "") {
+  return z
+    .string()
+    .optional()
+    .transform((value) => (value ?? "").trim() || defaultValue);
+}
+
 const payloadSchema = z.object({
-  type: z.enum(Object.keys(generationTypeConfig) as [keyof typeof generationTypeConfig, ...Array<keyof typeof generationTypeConfig>]),
+  type: z.enum(
+    Object.keys(generationTypeConfig) as [
+      keyof typeof generationTypeConfig,
+      ...Array<keyof typeof generationTypeConfig>
+    ]
+  ),
   data: z.object({
-    topic: z.string().min(3),
-    niche: z.string().min(2),
-    audience: z.string().min(2),
-    tone: z.string().min(2),
-    language: z.enum(["ru", "uz", "en"]),
-    offer: z.string().optional(),
-    platform: z.string().optional(),
-    duration: z.string().optional(),
-    notes: z.string().optional()
+    topic: z.string().trim().min(3),
+    niche: optionalText(""),
+    audience: optionalText(""),
+    tone: optionalText("Энергичный, уверенный"),
+    language: z.enum(["ru", "uz", "en"]).default("ru"),
+    offer: optionalText(""),
+    platform: optionalText("Instagram Reels"),
+    duration: optionalText("30-45 секунд"),
+    notes: optionalText("")
   })
 });
 

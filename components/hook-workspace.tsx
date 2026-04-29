@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowClockwise,
   Copy,
   Lightning,
   LinkBreak,
   MagicWand,
+  Microphone,
   PaperPlaneTilt,
   Pulse,
   Sparkle
@@ -20,6 +21,44 @@ import type {
 import { generationTypeConfig } from "@/lib/generation-types";
 
 const typeOrder = Object.keys(generationTypeConfig) as GenerationType[];
+const tonePresets = [
+  "Энергичный, уверенный",
+  "Спокойный, экспертный",
+  "Провокационный",
+  "Дружелюбный, простой"
+] as const;
+const quickStartExamples = [
+  {
+    label: "Фитнес",
+    values: {
+      topic: "как удерживать клиентов фитнес-клуба",
+      niche: "Фитнес",
+      audience: "Владельцы клубов",
+      tone: "Энергичный, уверенный",
+      notes: "Нужны идеи для коротких reels про удержание клиентов и повторные продления."
+    }
+  },
+  {
+    label: "Эксперт",
+    values: {
+      topic: "как эксперту продавать консультации через reels",
+      niche: "Личный бренд",
+      audience: "Эксперты и наставники",
+      tone: "Спокойный, экспертный",
+      notes: "Хочу сценарии, которые звучат уверенно, но не как прямой инфобиз-прогрев."
+    }
+  },
+  {
+    label: "Салон",
+    values: {
+      topic: "как салону красоты возвращать клиентов",
+      niche: "Beauty",
+      audience: "Владельцы салонов",
+      tone: "Дружелюбный, простой",
+      notes: "Нужны темы для повторных записей, loyalty и удержания."
+    }
+  }
+] as const;
 
 const initialForm: GenerationInput = {
   topic: "",
@@ -42,11 +81,22 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [sentId, setSentId] = useState<string | null>(null);
   const [isTelegramContext, setIsTelegramContext] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [voiceField, setVoiceField] = useState<"topic" | "notes" | null>(null);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const canGenerate = form.topic.trim().length >= 3;
 
   useEffect(() => {
     setIsTelegramContext(Boolean(window.Telegram?.WebApp?.initData));
+    setVoiceSupported(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
     window.Telegram?.WebApp?.ready?.();
     window.Telegram?.WebApp?.expand?.();
+
+    return () => {
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+    };
   }, []);
 
   const stats = useMemo(() => {
@@ -99,6 +149,76 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  function applyQuickStart(values: Partial<GenerationInput>) {
+    setForm((prev) => ({ ...prev, ...values }));
+    setError(null);
+  }
+
+  function appendVoiceText(field: "topic" | "notes", transcript: string) {
+    setForm((prev) => {
+      if (field === "topic") {
+        return {
+          ...prev,
+          topic: transcript.trim()
+        };
+      }
+
+      return {
+        ...prev,
+        notes: prev.notes ? `${prev.notes.trim()}\n${transcript.trim()}` : transcript.trim()
+      };
+    });
+  }
+
+  function startVoiceInput(field: "topic" | "notes") {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!Recognition) {
+      setError("Голосовой ввод не поддерживается в этом браузере.");
+      return;
+    }
+
+    if (voiceField === field) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    recognitionRef.current?.stop();
+
+    const recognition = new Recognition();
+    recognitionRef.current = recognition;
+    recognition.lang =
+      form.language === "ru" ? "ru-RU" : form.language === "uz" ? "uz-UZ" : "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+
+      if (transcript) {
+        appendVoiceText(field, transcript);
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.("success");
+      }
+    };
+
+    recognition.onerror = () => {
+      setError("Не удалось распознать голос. Попробуй еще раз.");
+      setVoiceField(null);
+    };
+
+    recognition.onend = () => {
+      setVoiceField(null);
+      recognitionRef.current = null;
+    };
+
+    setVoiceField(field);
+    setError(null);
+    recognition.start();
   }
 
   async function copyText(text: string) {
@@ -251,6 +371,19 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
               </div>
             ) : null}
 
+            <div className="flex flex-wrap gap-2">
+              {quickStartExamples.map((example) => (
+                <button
+                  key={example.label}
+                  type="button"
+                  onClick={() => applyQuickStart(example.values)}
+                  className="inline-flex min-h-10 items-center rounded-[16px] border border-black/8 bg-white px-4 py-2 text-sm font-medium text-ink transition duration-200 hover:-translate-y-[1px]"
+                >
+                  {example.label}
+                </button>
+              ))}
+            </div>
+
             <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
               {typeOrder.map((item) => {
                 const active = item === type;
@@ -288,107 +421,178 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
               })}
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4">
               <Field label="Тема">
-                <input
-                  value={form.topic}
-                  onChange={(event) => setForm((prev) => ({ ...prev, topic: event.target.value }))}
-                  placeholder="Например: как фитнес-клубу удерживать клиентов"
-                  className={inputClassName}
-                />
-              </Field>
-
-              <Field label="Ниша">
-                <input
-                  value={form.niche}
-                  onChange={(event) => setForm((prev) => ({ ...prev, niche: event.target.value }))}
-                  placeholder="Фитнес, travel, косметология"
-                  className={inputClassName}
-                />
-              </Field>
-
-              <Field label="Аудитория">
-                <input
-                  value={form.audience}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, audience: event.target.value }))
-                  }
-                  placeholder="Владельцы бизнеса, молодые мамы, эксперты"
-                  className={inputClassName}
-                />
+                <div className="grid gap-2">
+                  <div className="flex gap-2">
+                    <input
+                      value={form.topic}
+                      onChange={(event) =>
+                        setForm((prev) => ({ ...prev, topic: event.target.value }))
+                      }
+                      placeholder="Например: как фитнес-клубу удерживать клиентов"
+                      className={inputClassName}
+                    />
+                    {voiceSupported ? (
+                      <IconButton
+                        label={voiceField === "topic" ? "Остановить запись" : "Надиктовать тему"}
+                        active={voiceField === "topic"}
+                        onClick={() => startVoiceInput("topic")}
+                        icon={
+                          <Microphone
+                            size={18}
+                            weight={voiceField === "topic" ? "fill" : "regular"}
+                          />
+                        }
+                      />
+                    ) : null}
+                  </div>
+                  <p className="text-sm leading-relaxed text-black/48">
+                    Достаточно одной темы. Остальное можно заполнить позже или не трогать вообще.
+                  </p>
+                </div>
               </Field>
 
               <Field label="Тон">
-                <input
-                  value={form.tone}
-                  onChange={(event) => setForm((prev) => ({ ...prev, tone: event.target.value }))}
-                  placeholder="Провокационный, спокойный, экспертный"
-                  className={inputClassName}
-                />
+                <div className="flex flex-wrap gap-2">
+                  {tonePresets.map((tone) => {
+                    const active = form.tone === tone;
+
+                    return (
+                      <button
+                        key={tone}
+                        type="button"
+                        onClick={() => setForm((prev) => ({ ...prev, tone }))}
+                        className={[
+                          "inline-flex min-h-10 items-center rounded-[16px] border px-4 py-2 text-sm font-medium transition duration-200 hover:-translate-y-[1px]",
+                          active
+                            ? "border-moss bg-moss text-white"
+                            : "border-black/8 bg-white text-ink"
+                        ].join(" ")}
+                      >
+                        {tone}
+                      </button>
+                    );
+                  })}
+                </div>
               </Field>
 
-              <Field label="Платформа">
-                <select
-                  value={form.platform}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, platform: event.target.value }))
-                  }
-                  className={inputClassName}
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Платформа">
+                  <select
+                    value={form.platform}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, platform: event.target.value }))
+                    }
+                    className={inputClassName}
+                  >
+                    <option>Instagram Reels</option>
+                    <option>TikTok</option>
+                    <option>YouTube Shorts</option>
+                    <option>Telegram video</option>
+                  </select>
+                </Field>
+
+                <Field label="Язык">
+                  <select
+                    value={form.language}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        language: event.target.value as GenerationInput["language"]
+                      }))
+                    }
+                    className={inputClassName}
+                  >
+                    <option value="ru">Русский</option>
+                    <option value="uz">O'zbekcha</option>
+                    <option value="en">English</option>
+                  </select>
+                </Field>
+              </div>
+
+              <Field label="Контекст">
+                <div className="grid gap-2">
+                  <textarea
+                    value={form.notes}
+                    onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
+                    placeholder="Расскажи суть задачи, продукт, боль клиента, запретные слова, примеры."
+                    rows={5}
+                    className={`${inputClassName} resize-none`}
+                  />
+                  {voiceSupported ? (
+                    <div className="flex justify-end">
+                      <IconButton
+                        label={voiceField === "notes" ? "Остановить запись" : "Надиктовать контекст"}
+                        active={voiceField === "notes"}
+                        onClick={() => startVoiceInput("notes")}
+                        icon={
+                          <Microphone
+                            size={18}
+                            weight={voiceField === "notes" ? "fill" : "regular"}
+                          />
+                        }
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </Field>
+
+              <div className="rounded-[20px] border border-black/8 bg-white/70 p-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((prev) => !prev)}
+                  className="flex w-full items-center justify-between text-left text-sm font-medium text-ink"
                 >
-                  <option>Instagram Reels</option>
-                  <option>TikTok</option>
-                  <option>YouTube Shorts</option>
-                  <option>Telegram video</option>
-                </select>
-              </Field>
+                  <span>Доп. настройки</span>
+                  <span className="text-black/45">{showAdvanced ? "Скрыть" : "Показать"}</span>
+                </button>
 
-              <Field label="Язык">
-                <select
-                  value={form.language}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      language: event.target.value as GenerationInput["language"]
-                    }))
-                  }
-                  className={inputClassName}
-                >
-                  <option value="ru">Русский</option>
-                  <option value="uz">O'zbekcha</option>
-                  <option value="en">English</option>
-                </select>
-              </Field>
+                {showAdvanced ? (
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <Field label="Ниша">
+                      <input
+                        value={form.niche}
+                        onChange={(event) => setForm((prev) => ({ ...prev, niche: event.target.value }))}
+                        placeholder="Фитнес, travel, косметология"
+                        className={inputClassName}
+                      />
+                    </Field>
 
-              <Field label="Оффер">
-                <input
-                  value={form.offer}
-                  onChange={(event) => setForm((prev) => ({ ...prev, offer: event.target.value }))}
-                  placeholder="Что нужно продать или продвинуть"
-                  className={inputClassName}
-                />
-              </Field>
+                    <Field label="Аудитория">
+                      <input
+                        value={form.audience}
+                        onChange={(event) =>
+                          setForm((prev) => ({ ...prev, audience: event.target.value }))
+                        }
+                        placeholder="Владельцы бизнеса, молодые мамы, эксперты"
+                        className={inputClassName}
+                      />
+                    </Field>
 
-              <Field label="Длительность">
-                <input
-                  value={form.duration}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, duration: event.target.value }))
-                  }
-                  placeholder="15-20 секунд"
-                  className={inputClassName}
-                />
-              </Field>
+                    <Field label="Оффер">
+                      <input
+                        value={form.offer}
+                        onChange={(event) => setForm((prev) => ({ ...prev, offer: event.target.value }))}
+                        placeholder="Что нужно продать или продвинуть"
+                        className={inputClassName}
+                      />
+                    </Field>
+
+                    <Field label="Длительность">
+                      <input
+                        value={form.duration}
+                        onChange={(event) =>
+                          setForm((prev) => ({ ...prev, duration: event.target.value }))
+                        }
+                        placeholder="15-20 секунд"
+                        className={inputClassName}
+                      />
+                    </Field>
+                  </div>
+                ) : null}
+              </div>
             </div>
-
-            <Field label="Контекст">
-              <textarea
-                value={form.notes}
-                onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
-                placeholder="Боль клиента, уникальность продукта, запретные слова, факты."
-                rows={5}
-                className={`${inputClassName} resize-none`}
-              />
-            </Field>
 
             {error ? (
               <div className="rounded-[20px] border border-clay/30 bg-clay/10 px-4 py-3 text-sm text-ink">
@@ -399,9 +603,9 @@ export function HookWorkspace({ botUsername }: { botUsername: string }) {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                disabled={loading}
+                disabled={loading || !canGenerate}
                 onClick={handleGenerate}
-                className="inline-flex min-h-12 items-center gap-2 rounded-[18px] bg-ink px-5 py-3 text-sm font-medium text-white transition duration-200 hover:-translate-y-[1px] disabled:cursor-wait disabled:opacity-70"
+                className="inline-flex min-h-12 items-center gap-2 rounded-[18px] bg-ink px-5 py-3 text-sm font-medium text-white transition duration-200 hover:-translate-y-[1px] disabled:cursor-not-allowed disabled:opacity-55"
               >
                 {loading ? <ArrowClockwise size={18} className="animate-spin" /> : <MagicWand size={18} />}
                 {loading ? "Генерирую" : "Сгенерировать"}
@@ -567,6 +771,35 @@ function Field({
       <span className="text-sm font-medium text-black/58">{label}</span>
       {children}
     </label>
+  );
+}
+
+function IconButton({
+  label,
+  icon,
+  active,
+  onClick
+}: {
+  label: string;
+  icon: React.ReactNode;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={[
+        "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] border transition duration-200",
+        active
+          ? "border-moss bg-moss text-white"
+          : "border-black/8 bg-white text-ink hover:-translate-y-[1px]"
+      ].join(" ")}
+    >
+      {icon}
+    </button>
   );
 }
 
